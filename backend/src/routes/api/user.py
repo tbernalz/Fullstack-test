@@ -1,19 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from passlib.context import CryptContext
+from datetime import timedelta
 from src.controllers.user_controller import get_user
 from src.database.database import get_db
 from src.models.user import User as UserModel
 from src.schemas.user import User, UserCreate
+from src.utils.security import create_access_token, password_context
+
 # from sqlalchemy.orm import Session
 
 # Initialize the API router
 router = APIRouter()
-# Initialize the password context for hashing passwords
-password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-@router.post("/", response_model=User)
+@router.post("/")
 def create_user(user: UserCreate, db=Depends(get_db)): #db: Session = Depends(get_db)
+    existing_user = db.query(UserModel).filter(UserModel.email == user.email).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Email already in use")
     hashed_password = password_context.hash(user.password.get_secret_value())
     db_user = UserModel(
         email=user.email, 
@@ -24,7 +27,10 @@ def create_user(user: UserCreate, db=Depends(get_db)): #db: Session = Depends(ge
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    return db_user
+
+    access_token = create_access_token(db_user)
+
+    return access_token
 
 @router.post("/login")
 def login(form_data: OAuth2PasswordRequestForm = Depends(), db=Depends(get_db)): #db: Session = Depends(get_db)
