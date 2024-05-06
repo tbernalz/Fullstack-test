@@ -1,17 +1,15 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
-from datetime import timedelta
-from src.controllers.user_controller import get_user
 from src.database.database import get_db
-from src.models.user import User as UserModel
+from src.models.models import User as UserModel
 from src.schemas.user import User, UserCreate
 from src.utils.security import create_access_token, password_context
-
-# from sqlalchemy.orm import Session
+from .dependencies import get_current_user
 
 # Initialize the API router
 router = APIRouter()
 
+# Endpoint for signup
 @router.post("/")
 def create_user(user: UserCreate, db=Depends(get_db)): #db: Session = Depends(get_db)
     existing_user = db.query(UserModel).filter(UserModel.email == user.email).first()
@@ -32,25 +30,23 @@ def create_user(user: UserCreate, db=Depends(get_db)): #db: Session = Depends(ge
 
     return access_token
 
-@router.post("/login")
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db=Depends(get_db)): #db: Session = Depends(get_db)
-    db_user = db.query(UserModel).filter(UserModel.email == form_data.username).first()
-    if not db_user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Incorrect email or password",
-                            headers={"WWW-Authenticate": "Bearer"})
+# Get a token when the user authenticates (login). Endpoint for login
+@router.post("/token")
+def generate_token(form_data: OAuth2PasswordRequestForm = Depends(), db=Depends(get_db)):
+    user = db.query(UserModel).filter(UserModel.email == form_data.username).first()
+    if not user:
+        raise HTTPException(status_code=400, detail="Incorrect username or password")
 
-    if not password_context.verify(form_data.password, db_user.hashed_password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
-                            detail="Incorrect email or password",
-                            headers={"WWW-Authenticate": "Bearer"})
+    password_verified = password_context.verify(form_data.password, user.hashed_password)
+    if not password_verified:
+        raise HTTPException(status_code=400, detail="Incorrect username or password")
 
-    # If the above checks pass, then the user is authenticated.
-    # Here you might want to return a JWT or similar token for the user to use for authenticated requests.
+    access_token = create_access_token(user)
+    return access_token
 
-@router.get("/users/{user_id}", response_model=User)
-async def read_user(user_id: int, db=Depends(get_db)): # db: Session = Depends(get_db)
-    db_user = db.query(UserModel).filter(UserModel.id == user_id).first()
-    if db_user is None:
+@router.get("/user", response_model=User)
+def read_user_me(current_user: User = Depends(get_current_user)):
+    if current_user is None:
         raise HTTPException(status_code=404, detail="User not found")
-    return db_user
+    print(f"user found: {current_user}")
+    return current_user

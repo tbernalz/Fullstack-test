@@ -1,5 +1,5 @@
 from fastapi import HTTPException
-from ..models.user import User
+from ..models.models import User
 
 def get_user(db, user_id: int):
     user = db.query(User).get(user_id)
